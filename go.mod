@@ -6,6 +6,7 @@ require (
 	github.com/joho/godotenv v1.4.0
 	github.com/muesli/clusters v0.0.0-20200529215643-2700303c1762
 	github.com/muesli/kmeans v0.3.1
+	github.com/trimmer-io/go-csv v1.0.0
 	gonum.org/v1/plot v0.12.0
 )
 

@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/muesli/clusters"
 	"github.com/muesli/kmeans"
+	"github.com/trimmer-io/go-csv"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -34,6 +37,7 @@ var myColor = color.RGBA{
 var (
 	FOLDER    = ""
 	PY_SCRIPT = ""
+	DATA_PATH = ""
 )
 
 var (
@@ -41,7 +45,75 @@ var (
 	AMOUNT_OF_CENTERS = -1
 	THRESHOLD         = -1.0
 	COUNT_ITER        = -1
+	DEBUG             = 0
 )
+
+type istorage interface {
+	getData() clusters.Observations
+}
+
+type storage struct {
+	IsData bool
+}
+
+func (s *storage) getData() clusters.Observations {
+
+	var d clusters.Observations
+	if s.IsData {
+		type Demo struct {
+			Len1 string `csv:"len1"`
+			Wid1 string `csv:"wid1"`
+			// Len2  string `csv:"len2"`
+			// Wid2  string `csv:"wid2"`
+			// Class string `csv:"cl"`
+		}
+		type FrameSequence []*Demo
+
+		fn := func(path string) (FrameSequence, error) {
+			b, err := ioutil.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			seq := make(FrameSequence, 0)
+			if err := csv.Unmarshal('	', b, &seq); err != nil {
+				return nil, err
+			}
+			return seq, nil
+		}
+
+		fr, err := fn(DATA_PATH)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, v := range fr {
+			// fmt.Printf("idx: %d, val: %v", i, v)
+			x, err := strconv.ParseFloat(strings.Replace(v.Len1, ",", ".", -1), 64)
+			y, err := strconv.ParseFloat(strings.Replace(v.Wid1, ",", ".", -1), 64)
+			if err != nil {
+				panic(err)
+			}
+			d = append(d, clusters.Coordinates{
+				x,
+				y,
+			})
+		}
+		return d
+	} else {
+		for x := 0; x < AMOUNT_OF_POINTS; x++ {
+			d = append(d, clusters.Coordinates{
+				rand.Float64(),
+				rand.Float64(),
+			})
+		}
+	}
+
+	if DEBUG == 1 {
+		os.Exit(0)
+	}
+
+	return d
+}
 
 func main() {
 
@@ -51,12 +123,24 @@ func main() {
 	}
 
 	FOLDER = os.Getenv("IMG_FOLDER")
+	DATA_PATH = os.Getenv("DATA_PATH")
 	PY_SCRIPT = os.Getenv("PY_SCRIPT")
 	AMOUNT_OF_POINTS, err = strconv.Atoi(os.Getenv("AMOUNT_OF_POINTS"))
 	AMOUNT_OF_CENTERS, err = strconv.Atoi(os.Getenv("AMOUNT_OF_CENTERS"))
 	THRESHOLD, err = strconv.ParseFloat(os.Getenv("THRESHOLD"), 64)
 	COUNT_ITER, err = strconv.Atoi(os.Getenv("COUNT_ITER"))
-	
+	DEBUG, err = strconv.Atoi(os.Getenv("DEBUG"))
+
+	var isData bool = false
+
+	if DATA_PATH != "" {
+		_, err := os.Open(DATA_PATH)
+		if err != nil {
+			panic(err)
+		}
+		isData = true
+	}
+
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +149,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := km(); err != nil {
+	if err := km(&storage{IsData: isData}); err != nil {
 		panic(err)
 	}
 
@@ -118,23 +202,14 @@ func show() error {
 	return nil
 }
 
-func km() error {
-
-	var d clusters.Observations
-	for x := 0; x < AMOUNT_OF_POINTS; x++ {
-		d = append(d, clusters.Coordinates{
-			rand.Float64(),
-			rand.Float64(),
-		})
-
-	}
+func km(st istorage) error {
 
 	km, err := kmeans.New(MyPlot{}, THRESHOLD, COUNT_ITER)
 	if err != nil {
 		return err
 	}
 
-	clusters, err := km.Partition(d, AMOUNT_OF_CENTERS)
+	clusters, err := km.Partition(st.getData(), AMOUNT_OF_CENTERS)
 	if err != nil {
 		return err
 	}
